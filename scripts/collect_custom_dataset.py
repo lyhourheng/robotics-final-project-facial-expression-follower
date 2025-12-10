@@ -1,6 +1,7 @@
 """
 Custom Emotion Dataset Collection Tool
 Captures images from webcam with emotion labels for training.
+Uses YOLOv8-face for robust face detection.
 """
 
 import cv2
@@ -8,6 +9,7 @@ import os
 import numpy as np
 from datetime import datetime
 import argparse
+import onnxruntime as ort
 
 
 class EmotionDataCollector:
@@ -31,14 +33,28 @@ class EmotionDataCollector:
         # Setup directories
         self._setup_directories()
         
-        # Face detection (optional - can capture full frame too)
-        self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-        )
+        # YOLOv8-face detection setup
+        self.yolo_face_model = '../yolov8n-face.onnx'
+        self.face_input_size = 320
+        self.face_confidence_threshold = 0.4
+        self.iou_threshold = 0.45
+        
+        # Load YOLOv8-face model
+        if not os.path.exists(self.yolo_face_model):
+            print(f"❌ Error: {self.yolo_face_model} not found!")
+            print("   Please ensure yolov8n-face.onnx is in the parent directory")
+            raise FileNotFoundError(f"YOLOv8-face model not found at {self.yolo_face_model}")
+        
+        print("Loading YOLOv8-face model...")
+        self.face_session = ort.InferenceSession(self.yolo_face_model, providers=['CPUExecutionProvider'])
+        self.face_input_name = self.face_session.get_inputs()[0].name
+        print("✓ YOLOv8-face model loaded")
+        
         self.detect_face = True
         
         print("="*60)
         print("EMOTION DATASET COLLECTION TOOL")
+        print("Using YOLOv8-face for robust face detection")
         print("="*60)
         print(f"Output directory: {self.output_dir}")
         print(f"Emotions: {self.emotions}")
@@ -103,6 +119,80 @@ class EmotionDataCollector:
         
         return filename
     
+    def _preprocess_for_yolo(self, frame, input_size=None):
+        """Preprocess image for YOLOv8 face detection"""
+        if input_size is None:
+            input_size = self.face_input_size
+        img = cv2.resize(frame, (input_size, input_size))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = img.astype(np.float32) / 255.0
+        img = np.transpose(img, (2, 0, 1))
+        img = np.expand_dims(img, axis=0)
+        return img
+    
+    def _nms(self, boxes, scores):
+        """Non-Maximum Suppression"""
+        if len(boxes) == 0:
+            return []
+        indices = cv2.dnn.NMSBoxes(
+            boxes.tolist(), scores.tolist(),
+            self.face_confidence_threshold, self.iou_threshold
+        )
+        return indices.flatten() if len(indices) > 0 else []
+    
+    def _detect_faces_yolo(self, frame):
+        """Detect faces using YOLOv8-face"""
+        h, w = frame.shape[:2]
+        
+        # Preprocess
+        input_blob = self._preprocess_for_yolo(frame, self.face_input_size)
+        
+        # Inference
+        outputs = self.face_session.run(None, {self.face_input_name: input_blob})
+        
+        # Post-process
+        predictions = outputs[0][0].T
+        boxes_xywh = predictions[:, :4]
+        scores = predictions[:, 4]
+        
+        # Filter by confidence
+        mask = scores > self.face_confidence_threshold
+        boxes_xywh = boxes_xywh[mask]
+        scores = scores[mask]
+        
+        if len(boxes_xywh) == 0:
+            return []
+        
+        # Convert to corner format
+        boxes_xyxy = np.zeros_like(boxes_xywh)
+        boxes_xyxy[:, 0] = boxes_xywh[:, 0] - boxes_xywh[:, 2] / 2
+        boxes_xyxy[:, 1] = boxes_xywh[:, 1] - boxes_xywh[:, 3] / 2
+        boxes_xyxy[:, 2] = boxes_xywh[:, 0] + boxes_xywh[:, 2] / 2
+        boxes_xyxy[:, 3] = boxes_xywh[:, 1] + boxes_xywh[:, 3] / 2
+        
+        # NMS
+        keep_indices = self._nms(boxes_xyxy, scores)
+        
+        if len(keep_indices) == 0:
+            return []
+        
+        # Scale to original size
+        scale_x = w / self.face_input_size
+        scale_y = h / self.face_input_size
+        
+        final_boxes = []
+        for idx in keep_indices:
+            x1, y1, x2, y2 = boxes_xyxy[idx]
+            x1 = int(max(0, min(x1 * scale_x, w)))
+            y1 = int(max(0, min(y1 * scale_y, h)))
+            x2 = int(max(0, min(x2 * scale_x, w)))
+            y2 = int(max(0, min(y2 * scale_y, h)))
+            
+            # Convert to (x, y, w, h) format for compatibility
+            final_boxes.append((x1, y1, x2-x1, y2-y1))
+        
+        return final_boxes
+    
     def _draw_ui(self, frame):
         """Draw UI overlay on frame."""
         # Current emotion display
@@ -154,13 +244,10 @@ class EmotionDataCollector:
             frame = cv2.flip(frame, 1)
             display_frame = frame.copy()
             
-            # Detect faces
+            # Detect faces with YOLOv8
             faces = []
             if self.detect_face:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = self.face_cascade.detectMultiScale(
-                    gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30)
-                )
+                faces = self._detect_faces_yolo(frame)
                 
                 # Draw face boxes
                 for (x, y, w, h) in faces:
