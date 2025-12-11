@@ -1,0 +1,21 @@
+IMPROVED YOLOV8 FER MODEL TEST RESULTS
+======================================================================
+Model: fer_yolov8_cls.onnx
+Input size: 128×128
+Test images: 2546
+Overall Accuracy: 0.8590 (85.90%)
+Top-5 Accuracy: 1.0000 (100.00%)
+Average inference time: 2.50 ms
+FPS: 399.24
+
+              precision    recall  f1-score   support
+
+       angry     0.8167    0.7817    0.7988       513
+       happy     0.9467    0.9357    0.9412       513
+     neutral     0.8516    0.9396    0.8934       513
+         sad     0.8040    0.8219    0.8128       494
+   surprised     0.8763    0.8148    0.8444       513
+
+    accuracy                         0.8590      2546
+   macro avg     0.8591    0.8587    0.8581      2546
+weighted avg     0.8595    0.8590    0.8585      2546
