@@ -38,12 +38,12 @@ from robot_motor_control import EmotionRobotController
 # ============================================================================
 
 # Model paths
-FACE_MODEL = "../yolov8n-face.onnx"
-FER_MODEL = "fer_yolov8_cls_best.onnx"
+FACE_MODEL = "../final-model/yolov8n-face.onnx"
+FER_MODEL = "../final-model/fer_yolov8_cls.onnx"
 
 # Detection settings
 FACE_INPUT_SIZE = 320       # Face detector input (320-416)
-FER_INPUT_SIZE = 96         # FER classifier input
+FER_INPUT_SIZE = 128      # FER classifier input
 FACE_CONF_THRESHOLD = 0.5   # Min face detection confidence
 FER_CONF_THRESHOLD = 0.5    # Min emotion classification confidence
 
