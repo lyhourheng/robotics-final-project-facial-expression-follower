@@ -186,7 +186,7 @@ def detect_ivcam():
         
 
 # Detect and open camera
-camera_index = detect_ivcam()
+camera_index = 0
 if camera_index is None:
     print("❌ No cameras detected")
     exit(1)
